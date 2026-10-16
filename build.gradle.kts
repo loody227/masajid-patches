@@ -48,10 +48,10 @@ tasks.jar {
             "Description" to "Patches for sa.gov.moia.beneficiaryapp (Masajid)",
             "Version" to project.version.toString(),
             "Timestamp" to System.currentTimeMillis().toString(),
-            "Source" to "local (masajid-bundle)",
+            "Source" to "https://github.com/kaza7/masajid-patches",
             "Author" to "kaza7",
-            "Contact" to "na",
-            "Website" to "na",
+            "Contact" to "https://github.com/kaza7",
+            "Website" to "https://github.com/kaza7/masajid-patches",
             "License" to "GNU General Public License v3.0",
             // Lowest patcher the bundle needs; Desktop 1.16.0 ships a newer one.
             "Patcher-Version" to "1.10.0",
