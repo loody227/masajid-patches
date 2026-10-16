@@ -40,8 +40,62 @@ java {
     targetCompatibility = JavaVersion.VERSION_11
 }
 
+// Intermediate JVM jar. Morphe Manager (Android) cannot load JVM .class files, so this is
+// not the published bundle; `buildBundle` below adds the dex and produces the real .mpp.
 tasks.jar {
+    archiveFileName.set("masajid-patches-${project.version}-classes.jar")
+}
+
+// Locates the Android SDK pieces d8 needs (build-tools + a platform android.jar).
+fun androidSdkDir(): File {
+    val candidates = listOfNotNull(
+        System.getenv("ANDROID_HOME"),
+        System.getenv("ANDROID_SDK_ROOT"),
+        "${System.getProperty("user.home")}/Library/Android/sdk",
+        "${System.getProperty("user.home")}/Android/Sdk",
+    )
+    return candidates.map(::File).firstOrNull { File(it, "build-tools").isDirectory }
+        ?: error("Android SDK not found; set ANDROID_HOME (needs build-tools and a platform)")
+}
+
+val dexOutputDir = layout.buildDirectory.dir("dex")
+
+// Converts the compiled classes to classes.dex, the format Morphe Manager loads
+// (it rejects a bundle with "Patch bundle is missing dex entries").
+val dexBundle by tasks.registering(Exec::class) {
+    val classesJar = tasks.jar.flatMap { it.archiveFile }
+    dependsOn(tasks.jar)
+    inputs.file(classesJar)
+    outputs.dir(dexOutputDir)
+
+    doFirst {
+        val sdk = androidSdkDir()
+        val d8 = File(sdk, "build-tools").listFiles()!!
+            .filter { File(it, "d8").exists() && "rc" !in it.name }.maxByOrNull { it.name }
+            ?.let { File(it, "d8") } ?: error("d8 not found in $sdk/build-tools")
+        val androidJar = File(sdk, "platforms").listFiles()!!
+            .filter { File(it, "android.jar").exists() }.maxByOrNull { it.name }
+            ?.let { File(it, "android.jar") } ?: error("android.jar not found in $sdk/platforms")
+
+        dexOutputDir.get().asFile.apply { deleteRecursively(); mkdirs() }
+
+        val args = mutableListOf(d8.path, "--release", "--min-api", "26", "--lib", androidJar.path)
+        configurations.compileClasspath.get().files.forEach { args += listOf("--classpath", it.path) }
+        args += listOf("--output", dexOutputDir.get().asFile.path, classesJar.get().asFile.path)
+        commandLine(args)
+    }
+}
+
+// `./gradlew buildBundle` -> build/libs/masajid-patches-1.0.0.mpp (classes + classes.dex,
+// the same layout as the official Morphe bundles).
+tasks.register<Jar>("buildBundle") {
+    dependsOn(dexBundle)
     archiveFileName.set("masajid-patches-${project.version}.mpp")
+    destinationDirectory.set(layout.buildDirectory.dir("libs"))
+
+    from(zipTree(tasks.jar.flatMap { it.archiveFile })) { exclude("META-INF/MANIFEST.MF") }
+    from(dexOutputDir)
+
     manifest {
         attributes(
             "Name" to "Masajid Patches",
@@ -57,9 +111,4 @@ tasks.jar {
             "Patcher-Version" to "1.10.0",
         )
     }
-}
-
-// `./gradlew buildBundle` -> build/libs/masajid-patches-1.0.0.mpp
-tasks.register("buildBundle") {
-    dependsOn(tasks.jar)
 }
